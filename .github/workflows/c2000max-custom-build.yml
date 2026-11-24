@@ -1,0 +1,120 @@
+name: C2000MAX custom sysupgrade build
+
+# Manual build of configs/c2000max.config + configs/c2000max-custom.config.
+# Build steps mirror c2000max-one-shot-build.yml, without the release
+# verification, SD image assembly and publishing stages.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c2000max-custom-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      FORCE_UNSAFE_CONFIGURE: "1"
+      SOURCE_DATE_EPOCH: "1784306413"
+      LC_ALL: C
+      TZ: UTC
+
+    steps:
+      - name: Reclaim runner disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          df -h /
+
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify pinned driver source archives
+        shell: bash
+        run: bash scripts/c2000max/check-local-sources.sh
+
+      - name: Restore downloads and compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl
+            .ccache
+          key: ${{ runner.os }}-c2000max-custom-${{ hashFiles('feeds.conf.default', 'configs/c2000max.config', 'configs/c2000max-custom.config') }}
+          restore-keys: |
+            ${{ runner.os }}-c2000max-custom-
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev python3-setuptools python3-pyelftools \
+            rsync swig unzip zlib1g-dev file wget curl libelf-dev device-tree-compiler \
+            cpio qemu-utils ca-certificates patch perl
+
+      - name: Install locked feeds
+        shell: bash
+        run: |
+          ./scripts/feeds update -a
+          for feed in packages luci routing telephony video; do
+            ./scripts/feeds install -a -p "$feed"
+          done
+          git -C feeds/packages apply \
+            "$GITHUB_WORKSPACE/scripts/c2000max/packages-go126-module-root.patch"
+          git -C feeds/packages apply \
+            "$GITHUB_WORKSPACE/scripts/c2000max/packages-daed-generated-assets.patch"
+          bash scripts/c2000max/apply-v365-feed-fixes.sh
+          git -C feeds/luci apply \
+            "$GITHUB_WORKSPACE/scripts/c2000max/luci-v3701-release.patch"
+
+      - name: Generate configuration
+        shell: bash
+        run: |
+          cat configs/c2000max.config configs/c2000max-custom.config > .config
+          make defconfig
+          sed -i "s#^CONFIG_CCACHE_DIR=.*#CONFIG_CCACHE_DIR=\"$GITHUB_WORKSPACE/.ccache\"#" .config
+          printf '\nCONFIG_CCACHE=y\n' >> .config
+          grep -E '^CONFIG_(TARGET_mediatek_filogic_DEVICE_nradio_c2000-max|PACKAGE_c2000max-board|PACKAGE_qmodem)=' .config
+          # Packages removed by the overlay must stay out of the image.
+          ! grep -E '^CONFIG_PACKAGE_(c2000max-app|luci-app-c2000max-app|mosquitto-nossl|luci-app-openclash|leigod-acc|luci-app-leigod-acc|luci-app-uugamebooster)=' .config
+
+      - name: Download sources
+        shell: bash
+        run: |
+          make -j"$(nproc)" download
+          find dl -maxdepth 1 -type f -size -1024c -print -delete
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          make package/mtk/drivers/mt_hwifi/clean
+          if ! make -j"$(nproc)" world; then
+            make -j1 V=s world
+          fi
+
+      - name: Collect images
+        shell: bash
+        run: |
+          mkdir -p c2000max-artifacts
+          find bin/targets/mediatek/filogic -maxdepth 1 -type f \
+            -exec cp -a {} c2000max-artifacts/ \;
+          test -n "$(find c2000max-artifacts -maxdepth 1 -type f -name '*nradio_c2000-max*-sysupgrade.bin' -print -quit)"
+          (cd c2000max-artifacts && sha256sum * > SHA256SUMS && ls -lh)
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: C2000MAX-custom-sysupgrade
+          path: c2000max-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
