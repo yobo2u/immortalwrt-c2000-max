@@ -1,8 +1,8 @@
-name: C2000MAX custom sysupgrade build
+name: C2000MAX custom firmware build
 
 # Manual build of configs/c2000max.config + configs/c2000max-custom.config.
 # Build steps mirror c2000max-one-shot-build.yml, without the release
-# verification, SD image assembly and publishing stages.
+# verification and publishing stages.
 
 on:
   workflow_dispatch:
@@ -40,6 +40,17 @@ jobs:
       - name: Verify pinned driver source archives
         shell: bash
         run: bash scripts/c2000max/check-local-sources.sh
+
+      - name: Fetch reference SD image
+        shell: bash
+        run: |
+          # Boot chain (GPT, bl2, u-boot-env, factory, fip) donor for the SD
+          # image. Fetched before the build so a bad download fails early.
+          mkdir -p c2000max-reference
+          curl -fL --retry 3 -o c2000max-reference/reference.img.gz \
+            "https://github.com/jasonBrom/immortalwrt-c2000-max/releases/download/c2000max-v35.35-port-role-lock-r1/C2000MAX-V35.35-port-role-lock-r1-local-sdcard.img.gz"
+          echo "4de598ca98fe7c41251a07a558d3c285c089e63df11fc9ff34e85e8619542001  c2000max-reference/reference.img.gz" \
+            | sha256sum -c -
 
       - name: Restore downloads and compiler cache
         uses: actions/cache@v4
@@ -101,19 +112,31 @@ jobs:
             make -j1 V=s world
           fi
 
-      - name: Collect images
+      - name: Collect images and assemble SD image
         shell: bash
         run: |
           mkdir -p c2000max-artifacts
           find bin/targets/mediatek/filogic -maxdepth 1 -type f \
             -exec cp -a {} c2000max-artifacts/ \;
-          test -n "$(find c2000max-artifacts -maxdepth 1 -type f -name '*nradio_c2000-max*-sysupgrade.bin' -print -quit)"
+          mapfile -d '' sysupgrades < <(
+            find c2000max-artifacts -maxdepth 1 -type f \
+              -name '*nradio_c2000-max*-sysupgrade.bin' -print0
+          )
+          test "${#sysupgrades[@]}" -eq 1
+
+          gzip -dc c2000max-reference/reference.img.gz > c2000max-reference/reference.img
+          sdcard="${sysupgrades[0]%-sysupgrade.bin}-sdcard.img"
+          python3 scripts/c2000max/assemble-c2000max-sdcard.py \
+            c2000max-reference/reference.img "${sysupgrades[0]}" "$sdcard" \
+            --overlay-mib 64 | tee c2000max-artifacts/sdcard-assembly.txt
+          gzip -n -9 "$sdcard"
+          gzip -t "$sdcard.gz"
           (cd c2000max-artifacts && sha256sum * > SHA256SUMS && ls -lh)
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: C2000MAX-custom-sysupgrade
+          name: C2000MAX-custom-firmware
           path: c2000max-artifacts/
           if-no-files-found: error
           retention-days: 7
