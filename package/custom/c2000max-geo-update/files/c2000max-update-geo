@@ -1,0 +1,28 @@
+#!/bin/sh
+# Refresh geoip.dat / geosite.dat used by daed and passwall2, then restart daed.
+# daed reads /usr/share/daed/*.dat, which are symlinks to /usr/share/v2ray/*.dat.
+
+DIR=/usr/share/v2ray
+TMP=/tmp/geo-update.$$
+MIRROR=https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release
+GITHUB=https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download
+
+mkdir -p "$TMP" || exit 1
+trap 'rm -rf "$TMP"' EXIT
+
+for name in geoip geosite; do
+	curl -fsSL --connect-timeout 15 -m 300 -o "$TMP/$name.dat" "$MIRROR/$name.dat" ||
+		curl -fsSL --connect-timeout 15 -m 300 -o "$TMP/$name.dat" "$GITHUB/$name.dat" ||
+		{ logger -t geo-update "download of $name.dat failed, keeping old files"; exit 1; }
+	# A truncated or error-page download must never replace a working file.
+	[ "$(wc -c < "$TMP/$name.dat")" -gt 1000000 ] ||
+		{ logger -t geo-update "$name.dat is too small, keeping old files"; exit 1; }
+done
+
+for name in geoip geosite; do
+	cp "$TMP/$name.dat" "$DIR/$name.dat.new" && mv "$DIR/$name.dat.new" "$DIR/$name.dat" || exit 1
+done
+
+logger -t geo-update "geoip.dat and geosite.dat updated"
+[ "$(uci -q get daed.config.enabled)" = 1 ] && /etc/init.d/daed restart
+exit 0

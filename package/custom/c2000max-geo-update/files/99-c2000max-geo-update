@@ -1,0 +1,9 @@
+#!/bin/sh
+# Schedule the weekly geo data update (Monday 04:30) once.
+
+CRON=/etc/crontabs/root
+
+mkdir -p /etc/crontabs
+grep -qs c2000max-update-geo "$CRON" ||
+	echo "30 4 * * 1 /usr/sbin/c2000max-update-geo" >> "$CRON"
+exit 0
