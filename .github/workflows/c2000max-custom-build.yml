@@ -6,6 +6,14 @@ name: C2000MAX custom firmware build
 
 on:
   workflow_dispatch:
+  # workflow_dispatch only works once this file is on the default branch;
+  # the push trigger lets the build start from this branch as well.
+  push:
+    branches:
+      - "claude/quirky-fermi-9mptu5"
+    paths:
+      - ".github/workflows/c2000max-custom-build.yml"
+      - "configs/c2000max-custom.config"
 
 permissions:
   contents: read
