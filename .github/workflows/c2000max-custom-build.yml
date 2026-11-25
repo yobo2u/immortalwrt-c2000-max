@@ -131,7 +131,7 @@ jobs:
             --overlay-mib 64 | tee c2000max-artifacts/sdcard-assembly.txt
           gzip -n -9 "$sdcard"
           gzip -t "$sdcard.gz"
-          (cd c2000max-artifacts && sha256sum * > SHA256SUMS && ls -lh)
+          (cd c2000max-artifacts && sha256sum * > c2000max-custom-sha256sums.txt && ls -lh)
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
