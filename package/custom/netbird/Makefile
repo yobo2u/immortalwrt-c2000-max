@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=netbird
-PKG_VERSION:=0.73.2
-PKG_RELEASE:=3
+PKG_VERSION:=0.83.2
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/netbirdio/netbird/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=ba8d1615a6676e6d17f5d4a3c8027cd2e7437c862da3f963d3b337c09efff423
+PKG_HASH:=e6d4d36da04017919f98b3724e51e1fe9982d803495ada1cdbc718eb0394cc48
 
 PKG_MAINTAINER:=Wesley Gimenes <wehagy@proton.me>
 PKG_LICENSE:=BSD-3-Clause
@@ -18,11 +18,6 @@ PKG_BUILD_FLAGS:=no-mips16
 
 GO_PKG:=github.com/netbirdio/netbird
 GO_PKG_BUILD_PKG:=$(GO_PKG)/client
-GO_PKG_INSTALL_EXTRA:= \
-	client/internal/ebpf/ebpf/bpf_bpfel.o \
-	client/internal/templates/pkce-auth-msg.html \
-	util/embeddedroots/isrg-root-x1.pem \
-	util/embeddedroots/isrg-root-x2.pem
 GO_PKG_LDFLAGS_X:=$(GO_PKG)/version.version=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
