@@ -18,6 +18,10 @@ PKG_BUILD_FLAGS:=no-mips16
 
 GO_PKG:=github.com/netbirdio/netbird
 GO_PKG_BUILD_PKG:=$(GO_PKG)/client
+GO_PKG_INSTALL_EXTRA:= \
+	client/internal/templates/pkce-auth-msg.html \
+	util/embeddedroots/isrg-root-x1.pem \
+	util/embeddedroots/isrg-root-x2.pem
 GO_PKG_LDFLAGS_X:=$(GO_PKG)/version.version=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
